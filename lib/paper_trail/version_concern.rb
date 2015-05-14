@@ -247,7 +247,7 @@ module PaperTrail
 
     def save_associations
       return unless PaperTrail.config.track_associations?
-      object = self.reify
+      object = self.item
       self.item_type.constantize.reflect_on_all_associations(:belongs_to).each do |assoc|
         assoc_version_args = {
             :version_id => self.id,
