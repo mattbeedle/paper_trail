@@ -21,7 +21,7 @@ module PaperTrail
         attr_accessible :item_type, :item_id, :event, :whodunnit, :object, :object_changes, :transaction_id, :created_at
       end
 
-      after_create :enforce_version_limit!
+      after_create :enforce_version_limit!, :save_associations
 
       scope :within_transaction, lambda { |id| where :transaction_id => id }
     end
@@ -233,6 +233,28 @@ module PaperTrail
         end
 
         model
+      end
+    end
+
+    def save_associations
+      return unless PaperTrail.config.track_associations?
+      object = self.reify
+      self.item_type.constantize.reflect_on_all_associations(:belongs_to).each do |assoc|
+        assoc_version_args = {
+            :version_id => self.id,
+            :foreign_key_name => assoc.foreign_key
+        }
+
+        if assoc.options[:polymorphic]
+          associated_record = object.send(assoc.name) if object.send(assoc.foreign_type)
+          if associated_record && associated_record.class.paper_trail_enabled_for_model?
+            assoc_version_args.merge!(:foreign_key_id => associated_record.id)
+          end
+        elsif assoc.klass.paper_trail_enabled_for_model?
+          assoc_version_args.merge!(:foreign_key_id => object.send(assoc.foreign_key))
+        end
+
+        PaperTrail::VersionAssociation.delay.create(assoc_version_args) if assoc_version_args.has_key?(:foreign_key_id)
       end
     end
 
