@@ -21,7 +21,7 @@ module PaperTrail
         attr_accessible :item_type, :item_id, :event, :whodunnit, :object, :object_changes, :transaction_id, :created_at
       end
 
-      after_create :enforce_version_limit!, :save_associations
+      after_create :enforce_version_limit!, :set_transaction_id, :save_associations
 
       scope :within_transaction, lambda { |id| where :transaction_id => id }
     end
@@ -233,6 +233,15 @@ module PaperTrail
         end
 
         model
+      end
+    end
+
+    def set_transaction_id
+      return unless self.item_type.constantize.paper_trail_version_class.column_names.include?('transaction_id')
+      if PaperTrail.transaction? && PaperTrail.transaction_id.nil?
+        PaperTrail.transaction_id = self.id
+         self.transaction_id = self.id
+         self.save
       end
     end
 
