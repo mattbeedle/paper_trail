@@ -77,13 +77,13 @@ module PaperTrail
 
         options[:on] ||= [:create, :update, :destroy]
         options_on = Array(options[:on]) # so that a single symbol can be passed in without wrapping it in an `Array`
-        after_commit  :record_create, :if => :save_version?, :on => :create if options_on.include?(:create)
+        after_create  :record_create, :if => :save_version? if options_on.include?(:create)
         if options_on.include?(:update)
           before_save   :reset_timestamp_attrs_for_update_if_needed!, :on => :update
-          after_commit  :record_update, :if => :save_version?, :on => :update
-          after_commit  :clear_version_instance!, :on => :update
+          after_update  :record_update, :if => :save_version?
+          after_update  :clear_version_instance!
         end
-        after_commit :record_destroy, :if => :save_version?, :on => :destroy if options_on.include?(:destroy)
+        after_destroy :record_destroy, :if => :save_version? if options_on.include?(:destroy)
 
         # Reset the transaction id when the transaction is closed
         after_commit :reset_transaction_id
@@ -294,7 +294,9 @@ module PaperTrail
         if paper_trail_switched_on?
           data = {
             :event     => paper_trail_event || 'create',
-            :whodunnit => PaperTrail.whodunnit
+            :whodunnit => PaperTrail.whodunnit,
+            :item_id   => self.id,
+            :item_type => self.class.base_class.name
           }
           if respond_to?(:created_at)
             data[PaperTrail.timestamp_field] = created_at
@@ -306,9 +308,9 @@ module PaperTrail
           if self.class.paper_trail_version_class.column_names.include?('transaction_id')
             data[:transaction_id] = PaperTrail.transaction_id
           end
-          version = send(self.class.versions_association_name).create! merge_metadata(data)
-          set_transaction_id(version)
-          save_associations(version)
+          send(self.class.versions_association_name).delay.create! merge_metadata(data)
+          # set_transaction_id(version)
+          # save_associations(version)
         end
       end
 
@@ -318,7 +320,9 @@ module PaperTrail
           data = {
             :event     => paper_trail_event || 'update',
             :object    => self.class.paper_trail_version_class.object_col_is_json? ? object_attrs : PaperTrail.serializer.dump(object_attrs),
-            :whodunnit => PaperTrail.whodunnit
+            :whodunnit => PaperTrail.whodunnit,
+            :item_id   => self.id,
+            :item_type => self.class.base_class.name
           }
           if respond_to?(:updated_at)
             data[PaperTrail.timestamp_field] = updated_at
@@ -330,9 +334,9 @@ module PaperTrail
           if self.class.paper_trail_version_class.column_names.include?('transaction_id')
             data[:transaction_id] = PaperTrail.transaction_id
           end
-          version = send(self.class.versions_association_name).create merge_metadata(data)
-          set_transaction_id(version)
-          save_associations(version)
+          send(self.class.versions_association_name).delay.create merge_metadata(data)
+          # set_transaction_id(version)
+          # save_associations(version)
         end
       end
 
@@ -374,11 +378,11 @@ module PaperTrail
           if self.class.paper_trail_version_class.column_names.include?('transaction_id')
             data[:transaction_id] = PaperTrail.transaction_id
           end
-          version = self.class.paper_trail_version_class.create(merge_metadata(data))
-          send("#{self.class.version_association_name}=", version)
-          send(self.class.versions_association_name).send :load_target
-          set_transaction_id(version)
-          save_associations(version)
+          self.class.paper_trail_version_class.delay.create(merge_metadata(data))
+          # send("#{self.class.version_association_name}=", version)
+          # send(self.class.versions_association_name).send :load_target
+          # set_transaction_id(version)
+          # save_associations(version)
         end
       end
 
@@ -400,7 +404,7 @@ module PaperTrail
             assoc_version_args.merge!(:foreign_key_id => send(assoc.foreign_key))
           end
 
-          PaperTrail::VersionAssociation.create(assoc_version_args) if assoc_version_args.has_key?(:foreign_key_id)
+          PaperTrail::VersionAssociation.delay.create(assoc_version_args) if assoc_version_args.has_key?(:foreign_key_id)
         end
       end
 
